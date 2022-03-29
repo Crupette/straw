@@ -16,12 +16,13 @@ namespace straw
 {
 
 struct color {
-    std::uint8_t r, g, b;
+    std::uint8_t r{}, g{}, b{};
     constexpr color(std::uint8_t R, std::uint8_t G, std::uint8_t B) : r(R), g(G), b(B) {}
     constexpr color(std::uint8_t A) : r(A), g(A), b(A) {}
 
     constexpr uint32_t single() { return (uint32_t)r << 16 | (uint32_t)g << 8 | (uint32_t)b; }
-    friend constexpr bool operator==(const color &lhs, const color &rhs) = default;
+
+    constexpr bool operator==(const color &o) const = default;
 };
 
 struct attribs {
@@ -32,7 +33,7 @@ struct attribs {
     constexpr attribs(color Bg, color Fg) : bg(Bg), fg(Fg) {}
     constexpr attribs(color Bg, color Fg, bool B, bool U) : bg(Bg), fg(Fg), bold(B), underline(U) {}
 
-    friend constexpr bool operator==(const attribs &lhs, const attribs &rhs) = default;
+    constexpr bool operator==(const attribs &o) const = default;
 };
 
 template<typename T>
@@ -50,13 +51,13 @@ struct cell {
     constexpr cell(chartype Chr, color Bg, color Fg, bool B, bool U) : chr(Chr), attr(Bg, Fg, B, U) {}
     constexpr cell(chartype Chr, attribs Attr) : chr(Chr), attr(Attr) {}
 
-    friend constexpr bool operator==(const cell<chartype> &lhs, const cell<chartype> &rhs) = default;
+    constexpr bool operator==(const cell &o) const = default;
 };
 
-const std::string ANSI_ESCAPE = "\033[";
-static void ANSI_MOVE(unsigned x, unsigned y) { std::stringstream ss; ss << ANSI_ESCAPE << y+1 << ';' << x+1 << 'H'; std::cout << ss.str(); }
-static void ANSI_COLOR_FG(color c) { std::stringstream ss; ss << ANSI_ESCAPE << "38;2;" << c.r << ';' << c.g << ';' << c.b << 'm'; std::cout << ss.str(); }
-static void ANSI_COLOR_BG(color c) { std::stringstream ss; ss << ANSI_ESCAPE << "38;2;" << c.r << ';' << c.g << ';' << c.b << 'm'; std::cout << ss.str(); }
+const std::string ANSI_ESCAPE = "\E[";
+static void ANSI_MOVE(unsigned x, unsigned y) { std::cout << ANSI_ESCAPE << y+1 << ';' << x+1 << 'H' << std::flush; }
+static void ANSI_COLOR_FG(color c) { std::cout << ANSI_ESCAPE << "38;2;" << c.r << ';' << c.g << ';' << c.b << 'm' << std::flush; }
+static void ANSI_COLOR_BG(color c) { std::cout << ANSI_ESCAPE << "48;2;" << c.r << ';' << c.g << ';' << c.b << 'm' << std::flush; }
 
 class screen_command_base {};
 
@@ -127,17 +128,19 @@ public:
     
     void redraw() {
         attribs cattr = (*this)[0][0].attr;
+        ANSI_COLOR_BG(cattr.bg);
+        ANSI_COLOR_FG(cattr.fg);
         for(unsigned y = 0; y < m_height; y++) {
             ANSI_MOVE(0, y);
             for(cell c : (*this)[y]) {
-                if(c.attr != cattr) {
-                    ANSI_COLOR_FG(c.attr.fg);
-                    ANSI_COLOR_BG(c.attr.bg);
+                if(cattr != c.attr) {
                     cattr = c.attr;
+                    ANSI_COLOR_FG(cattr.fg);
+                    ANSI_COLOR_BG(cattr.bg);
                 }
                 std::cout << c.chr;
             }
-            std::cout << std::flush;
+            std::cout.clear();
         }
         m_back = m_front;
     }
@@ -150,16 +153,18 @@ public:
             auto frontspan = (*this)[y];
             if(std::equal(backspan.begin(), backspan.end(), frontspan.begin(), frontspan.end())) continue;
             for(unsigned x = 0; x < m_width; x++) {
-                if(frontspan[x] == backspan[x]) continue;
+                cell c = frontspan[x];
+                if(c == backspan[x]) continue;
                 ANSI_MOVE(x, y);
-                if(frontspan[x].attr != backspan[x].attr) {
-                    ANSI_COLOR_FG(frontspan[x].attr.fg);
-                    ANSI_COLOR_BG(frontspan[x].attr.bg);
+                if(c.attr != backspan[x].attr) {
+                    ANSI_COLOR_FG(c.attr.fg);
+                    ANSI_COLOR_BG(c.attr.bg);
                 }
-                std::cout << frontspan[x].chr;
+                std::cout << c.chr;
             }
-            std::cout << std::flush;
+            std::cout.clear();
         }
+        m_back = m_front;
     }
 
     std::span<cell<chartype>> operator[](std::size_t i) { 
